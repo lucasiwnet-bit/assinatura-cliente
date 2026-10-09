@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assinatura do Cliente</title>
+<style>
+  :root { color-scheme: light; --blue:#155eef; --ink:#111827; --muted:#667085; --line:#d0d5dd; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f2f4f7; color:var(--ink); font-family:Arial,Helvetica,sans-serif; }
+  .app { max-width:760px; margin:0 auto; padding:18px; }
+  header { margin:4px 0 16px; }
+  h1 { font-size:22px; margin:0 0 5px; }
+  .sub { color:var(--muted); font-size:14px; }
+  .paper { background:white; border:1px solid #e4e7ec; border-radius:12px; padding:22px; box-shadow:0 4px 16px #1018280d; }
+  .section-title { font-size:17px; font-weight:700; margin:0 0 7px; letter-spacing:.2px; }
+  label { display:block; font-size:13px; color:#475467; margin:14px 0 6px; }
+  input, textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:11px 12px; font:inherit; background:white; }
+  textarea { min-height:85px; resize:vertical; }
+  .meta { color:#667085; font-size:13px; margin-top:4px; }
+  .signature-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:22px; }
+  .signature-head strong { font-size:15px; }
+  .signature-pad { margin-top:8px; border:1px solid #d0d5dd; border-radius:8px; background:#fff; overflow:hidden; touch-action:none; }
+  canvas { display:block; width:100%; height:220px; touch-action:none; cursor:crosshair; }
+  .hint { font-size:12px; color:#667085; margin-top:7px; }
+  .actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:17px; }
+  button { border:0; border-radius:8px; padding:11px 14px; font-size:14px; font-weight:700; cursor:pointer; }
+  .primary { background:var(--blue); color:white; }
+  .secondary { background:#eef2f6; color:#344054; }
+  .danger { background:#fff0f0; color:#b42318; }
+  .status { min-height:18px; margin-top:12px; font-size:13px; color:#067647; }
+  .footer { text-align:center; color:#667085; font-size:12px; padding:15px 0 3px; }
+  @media(max-width:480px) { .app{padding:12px} .paper{padding:16px} canvas{height:190px} }
+  @media print { body{background:white} .app{max-width:none;padding:0} header,.actions,.hint,.footer{display:none!important} .paper{border:0;box-shadow:none;padding:0} input,textarea{border:0;padding:4px 0} .signature-pad{border:0} canvas{height:180px} }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Assinatura do cliente</h1>
+    <div class="sub">Preencha o atendimento e colete a assinatura diretamente na tela.</div>
+  </header>
+  <main class="paper" id="documento">
+    <div class="section-title">PROCEDIMENTO / OBSERVAÇÕES</div>
+    <label for="atendimento">Atendimento</label>
+    <input id="atendimento" type="text" inputmode="numeric" placeholder="Ex.: 315242">
+    <label for="observacoes">Descrição do serviço</label>
+    <textarea id="observacoes" placeholder="Descreva o procedimento realizado...">Feito troca de roteadores com sucesso.</textarea>
+    <div class="signature-head">
+      <strong>Assinatura do cliente:</strong>
+    </div>
+    <div class="signature-pad"><canvas id="assinatura" aria-label="Área para desenhar a assinatura"></canvas></div>
+    <div class="hint">Assine com o dedo ou com uma caneta touch. Se errar, toque em “Limpar assinatura”.</div>
+    <label for="nome">Nome do cliente (opcional)</label>
+    <input id="nome" type="text" placeholder="Ex.: Flávia M">
+    <div class="status" id="status" aria-live="polite"></div>
+  </main>
+  <div class="actions">
+    <button class="secondary" id="limpar">Limpar assinatura</button>
+    <button class="secondary" id="exemplo">Carregar exemplo “Flávia M”</button>
+    <button class="primary" id="salvar">Salvar assinatura (PNG)</button>
+    <button class="primary" id="pdf">Imprimir / salvar em PDF</button>
+  </div>
+  <div class="footer">Demonstração local — os dados ficam neste dispositivo até você salvar ou fechar a página.</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('assinatura');
+  const ctx = canvas.getContext('2d');
+  let desenhando = false, temTraço = false, ultimo = null;
+
+  function ajustarCanvas(preservar=true) {
+    let snapshot = null;
+    if (preservar && canvas.width && canvas.height) snapshot = canvas.toDataURL();
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#111111';
+    ctx.fillStyle = '#111111';
+    if (snapshot) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = snapshot;
+    } else limparCanvas();
+  }
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX-r.left, y: e.clientY-r.top };
+  }
+  function iniciar(e) {
+    e.preventDefault();
+    desenhando = true;
+    ultimo = pos(e);
+    canvas.setPointerCapture?.(e.pointerId);
+    ctx.beginPath();
+    ctx.moveTo(ultimo.x, ultimo.y);
+  }
+  function mover(e) {
+    if (!desenhando) return;
+    e.preventDefault();
+    const p = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(ultimo.x, ultimo.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ultimo = p;
+    temTraço = true;
+  }
+  function parar() { desenhando = false; ultimo = null; }
+  function limparCanvas() {
+    const r = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, r.width, r.height);
+    temTraço = false;
+    document.getElementById('status').textContent = '';
+  }
+  canvas.addEventListener('pointerdown', iniciar);
+  canvas.addEventListener('pointermove', mover);
+  canvas.addEventListener('pointerup', parar);
+  canvas.addEventListener('pointercancel', parar);
+  canvas.addEventListener('lostpointercapture', parar);
+  document.getElementById('limpar').addEventListener('click', limparCanvas);
+
+  document.getElementById('exemplo').addEventListener('click', () => {
+    document.getElementById('nome').value = 'Flávia M';
+    limparCanvas();
+    const r = canvas.getBoundingClientRect();
+    ctx.save();
+    ctx.translate(0, 0);
+    ctx.font = 'italic 52px "Brush Script MT", "Segoe Script", cursive';
+    ctx.lineWidth = 1.4;
+    ctx.fillStyle = '#111';
+    ctx.fillText('Flávia M', 28, Math.min(r.height * .63, 125));
+    ctx.restore();
+    temTraço = true;
+    document.getElementById('status').textContent = 'Exemplo ilustrativo carregado. Não é uma assinatura manuscrita real.';
+  });
+
+  document.getElementById('salvar').addEventListener('click', () => {
+    if (!temTraço) {
+      document.getElementById('status').textContent = 'Faça a assinatura antes de salvar.';
+      return;
+    }
+    const out = document.createElement('canvas');
+    const octx = out.getContext('2d');
+    const w = 1200, h = 720;
+    out.width = w; out.height = h;
+    octx.fillStyle = '#fff'; octx.fillRect(0,0,w,h);
+    octx.fillStyle = '#111'; octx.font = 'bold 28px Arial';
+    octx.fillText('PROCEDIMENTO / OBSERVAÇÕES', 45, 55);
+    octx.font = '20px Arial';
+    octx.fillStyle = '#555';
+    octx.fillText('Atendimento: ' + (document.getElementById('atendimento').value || '—'), 45, 95);
+    const obs = document.getElementById('observacoes').value || '';
+    octx.fillStyle = '#222'; octx.font = '22px Arial';
+    let y = 145;
+    const words = obs.split(/\s+/); let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (octx.measureText(test).width > 1090 && line) { octx.fillText(line,45,y); y += 32; line = word; }
+      else line = test;
+    }
+    if (line) octx.fillText(line,45,y);
+    y += 65;
+    octx.fillStyle = '#555'; octx.font = '20px Arial';
+    octx.fillText('Assinatura do cliente:',45,y);
+    const r = canvas.getBoundingClientRect();
+    const img = new Image();
+    img.onload = () => {
+      octx.drawImage(img,45,y+18,1110,280);
+      octx.fillStyle='#555'; octx.font='18px Arial';
+      const nome = document.getElementById('nome').value;
+      if (nome) octx.fillText('Nome: ' + nome,45, h-35);
+      const a = document.createElement('a');
+      a.download = 'assinatura-atendimento-' + (document.getElementById('atendimento').value || 'sem-numero') + '.png';
+      a.href = out.toDataURL('image/png');
+      a.click();
+      document.getElementById('status').textContent = 'Imagem preparada para salvar.';
+    };
+    img.src = canvas.toDataURL('image/png');
+  });
+
+  document.getElementById('pdf').addEventListener('click', () => window.print());
+  window.addEventListener('resize', () => ajustarCanvas(true));
+  ajustarCanvas(false);
+})();
+</script>
+</body>
+</html>
