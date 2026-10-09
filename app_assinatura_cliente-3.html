@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assinatura do Cliente</title>
+<style>
+  :root { color-scheme: light; --blue:#155eef; --ink:#111827; --muted:#667085; --line:#d0d5dd; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f2f4f7; color:var(--ink); font-family:Arial,Helvetica,sans-serif; }
+  .app { max-width:760px; margin:0 auto; padding:18px; }
+  header { margin:4px 0 16px; }
+  h1 { font-size:22px; margin:0 0 5px; }
+  .sub { color:var(--muted); font-size:14px; }
+  .paper { background:white; border:1px solid #e4e7ec; border-radius:12px; padding:22px; box-shadow:0 4px 16px #1018280d; }
+  .section-title { font-size:17px; font-weight:700; margin:0 0 7px; letter-spacing:.2px; }
+  label { display:block; font-size:13px; color:#475467; margin:14px 0 6px; }
+  input, textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:11px 12px; font:inherit; background:white; }
+  textarea { min-height:85px; resize:vertical; }
+  .meta { color:#667085; font-size:13px; margin-top:4px; }
+  .signature-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:24px; }
+  .signature-head strong { font-size:15px; }
+  .signature-pad { margin-top:8px; border:1px solid #d0d5dd; border-radius:6px; background:#fff; overflow:hidden; touch-action:none; }
+  canvas { display:block; width:100%; height:105px; touch-action:none; cursor:crosshair; }
+  .signature-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .signing-overlay { display:none; position:fixed; inset:0; z-index:9999; background:#f2f4f7; padding:12px; }
+  .signing-overlay.active { display:flex; flex-direction:column; }
+  .signing-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .signing-title { font-size:16px; font-weight:700; }
+  .signing-canvas-wrap { flex:1; min-height:0; border:2px solid #98a2b3; border-radius:10px; background:white; overflow:hidden; touch-action:none; }
+  #canvasGrande { display:block; width:100%; height:100%; touch-action:none; }
+  .signing-bottom { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; padding-top:10px; }
+  body.signing { overflow:hidden; }
+  .hint { font-size:12px; color:#667085; margin-top:7px; }
+  .actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:17px; }
+  button { border:0; border-radius:8px; padding:11px 14px; font-size:14px; font-weight:700; cursor:pointer; }
+  .primary { background:var(--blue); color:white; }
+  .secondary { background:#eef2f6; color:#344054; }
+  .danger { background:#fff0f0; color:#b42318; }
+  .status { min-height:18px; margin-top:12px; font-size:13px; color:#067647; }
+  .footer { text-align:center; color:#667085; font-size:12px; padding:15px 0 3px; }
+  @media(max-width:480px) { .app{padding:12px} .paper{padding:16px} canvas{height:190px} }
+  @media print { body{background:white} .app{max-width:none;padding:0} header,.actions,.hint,.footer{display:none!important} .paper{border:0;box-shadow:none;padding:0} input,textarea{border:0;padding:4px 0} .signature-pad{border:0} canvas{height:180px} }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Assinatura do cliente</h1>
+    <div class="sub">Preencha o atendimento e colete a assinatura diretamente na tela.</div>
+  </header>
+  <main class="paper" id="documento">
+    <div class="section-title">PROCEDIMENTO / OBSERVAÇÕES</div>
+    <label for="atendimento">Atendimento</label>
+    <input id="atendimento" type="text" inputmode="numeric" placeholder="Ex.: 315242">
+    <label for="observacoes">Descrição do serviço</label>
+    <textarea id="observacoes" placeholder="Descreva o procedimento realizado...">Feito troca de roteadores com sucesso.</textarea>
+    <div class="signature-head">
+      <strong>Assinatura do cliente:</strong>
+    </div>
+    <div class="signature-pad"><canvas id="assinatura" aria-label="Área para desenhar a assinatura"></canvas></div>
+    <div class="signature-actions">
+      <button class="secondary" id="abrirAssinatura">Abrir assinatura em tela grande</button>
+    </div>
+    <div class="hint">A ficha fica neste formato compacto. Toque no botão para abrir uma área grande; vire o celular de lado e, se possível, mantenha a rotação automática ativada.</div>
+    <label for="nome">Nome do cliente (opcional)</label>
+    <input id="nome" type="text" placeholder="Ex.: Flávia M">
+    <div class="status" id="status" aria-live="polite"></div>
+  </main>
+  <div class="actions">
+    <button class="secondary" id="limpar">Limpar assinatura</button>
+    <button class="secondary" id="exemplo">Carregar exemplo “Flávia M”</button>
+    <button class="primary" id="salvar">Salvar assinatura (PNG)</button>
+    <button class="primary" id="pdf">Imprimir / salvar em PDF</button>
+  </div>
+  <div class="footer">Demonstração local — os dados ficam neste dispositivo até você salvar ou fechar a página.</div>
+</div>
+<div class="signing-overlay" id="telaAssinatura" aria-label="Assinatura em tela grande">
+  <div class="signing-top">
+    <div class="signing-title">Assinatura do cliente — tela grande</div>
+    <button class="secondary" id="fecharAssinatura">Voltar à ficha</button>
+  </div>
+  <div class="signing-canvas-wrap"><canvas id="canvasGrande" aria-label="Assine aqui com o dedo"></canvas></div>
+  <div class="signing-bottom">
+    <button class="secondary" id="limparGrande">Limpar</button>
+    <button class="primary" id="usarAssinatura">Usar esta assinatura</button>
+  </div>
+</div>
+<script>
+(() => {
+  const small = document.getElementById('assinatura');
+  const large = document.getElementById('canvasGrande');
+  const overlay = document.getElementById('telaAssinatura');
+  const status = document.getElementById('status');
+  const ctxs = new Map();
+  const drawn = new Map([[small, false], [large, false]]);
+  const active = new Map();
+  let signatureImage = null;
+
+  function setupCanvas(canvas, preserve=true) {
+    const old = preserve && canvas.width ? canvas.toDataURL() : null;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = canvas === large ? 3.2 : 2.4;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+    ctxs.set(canvas, ctx);
+    if (old) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = old;
+    } else ctx.clearRect(0, 0, rect.width, rect.height);
+  }
+  function point(canvas, e) {
+    const r = canvas.getBoundingClientRect();
+    return {x:e.clientX-r.left, y:e.clientY-r.top};
+  }
+  function down(canvas, e) {
+    e.preventDefault();
+    const p = point(canvas,e);
+    active.set(canvas,p);
+    try { canvas.setPointerCapture(e.pointerId); } catch(_) {}
+  }
+  function move(canvas,e) {
+    if (!active.has(canvas)) return;
+    e.preventDefault();
+    const p = point(canvas,e), prev = active.get(canvas), ctx = ctxs.get(canvas);
+    ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(p.x,p.y); ctx.stroke();
+    active.set(canvas,p); drawn.set(canvas,true);
+  }
+  function up(canvas) { active.delete(canvas); }
+  for (const canvas of [small,large]) {
+    canvas.addEventListener('pointerdown',e=>down(canvas,e));
+    canvas.addEventListener('pointermove',e=>move(canvas,e));
+    canvas.addEventListener('pointerup',()=>up(canvas));
+    canvas.addEventListener('pointercancel',()=>up(canvas));
+    canvas.addEventListener('lostpointercapture',()=>up(canvas));
+  }
+  function clear(canvas) {
+    const r=canvas.getBoundingClientRect();
+    ctxs.get(canvas).clearRect(0,0,r.width,r.height);
+    drawn.set(canvas,false);
+    if (canvas===small) signatureImage=null;
+    status.textContent='';
+  }
+  function copyCanvas(from,to) {
+    const fr=from.getBoundingClientRect(), tr=to.getBoundingClientRect();
+    const ctx=ctxs.get(to);
+    ctx.clearRect(0,0,tr.width,tr.height);
+    ctx.drawImage(from,0,0,fr.width,fr.height,0,0,tr.width,tr.height);
+    drawn.set(to,drawn.get(from));
+  }
+  async function openSigning() {
+    overlay.classList.add('active'); document.body.classList.add('signing');
+    setupCanvas(large,false);
+    if (drawn.get(small)) copyCanvas(small,large);
+    try {
+      if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+    } catch(_) {
+      status.textContent='Se o celular não girar automaticamente, vire-o de lado e ative a rotação automática.';
+    }
+  }
+  async function closeSigning() {
+    overlay.classList.remove('active'); document.body.classList.remove('signing');
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch(_) {}
+    try { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); } catch(_) {}
+    setupCanvas(small,false);
+    if (drawn.get(large)) copyCanvas(large,small);
+    else clear(small);
+  }
+  document.getElementById('abrirAssinatura').addEventListener('click',openSigning);
+  document.getElementById('fecharAssinatura').addEventListener('click',closeSigning);
+  document.getElementById('limpar').addEventListener('click',()=>clear(small));
+  document.getElementById('limparGrande').addEventListener('click',()=>clear(large));
+  document.getElementById('usarAssinatura').addEventListener('click',async()=>{
+    if (!drawn.get(large)) { status.textContent='Faça a assinatura antes de confirmar.'; return; }
+    copyCanvas(large,small);
+    await closeSigning();
+    status.textContent='Assinatura aplicada à ficha.';
+  });
+  document.getElementById('exemplo').addEventListener('click',()=>{
+    document.getElementById('nome').value='Flávia M';
+    clear(small);
+    const r=small.getBoundingClientRect(),ctx=ctxs.get(small);
+    ctx.save(); ctx.font='italic 40px "Brush Script MT","Segoe Script",cursive'; ctx.fillStyle='#111';
+    ctx.fillText('Flávia M',24,Math.min(r.height*.7,75)); ctx.restore();
+    drawn.set(small,true); status.textContent='Exemplo ilustrativo. Não é uma assinatura manuscrita real.';
+  });
+  document.getElementById('salvar').addEventListener('click',()=>{
+    if (!drawn.get(small)) { status.textContent='Faça a assinatura antes de salvar.'; return; }
+    const out=document.createElement('canvas'), c=out.getContext('2d');
+    out.width=1200;out.height=720;c.fillStyle='#fff';c.fillRect(0,0,1200,720);
+    c.fillStyle='#111';c.font='bold 28px Arial';c.fillText('PROCEDIMENTO / OBSERVAÇÕES',45,55);
+    c.font='20px Arial';c.fillStyle='#555';c.fillText('Atendimento: '+(document.getElementById('atendimento').value||'—'),45,95);
+    const obs=document.getElementById('observacoes').value||'';c.fillStyle='#222';c.font='22px Arial';
+    let y=145,line='';for(const word of obs.split(/\s+/)){const test=line?line+' '+word:word;if(c.measureText(test).width>1090&&line){c.fillText(line,45,y);y+=32;line=word;}else line=test;}if(line)c.fillText(line,45,y);
+    y+=65;c.fillStyle='#555';c.font='20px Arial';c.fillText('Assinatura do cliente:',45,y);
+    c.drawImage(small,45,y+18,1110,220);
+    const nome=document.getElementById('nome').value;if(nome){c.fillStyle='#555';c.font='18px Arial';c.fillText('Nome: '+nome,45,690);}
+    const a=document.createElement('a');a.download='assinatura-atendimento-'+(document.getElementById('atendimento').value||'sem-numero')+'.png';a.href=out.toDataURL('image/png');a.click();status.textContent='Imagem preparada para salvar.';
+  });
+  document.getElementById('pdf').addEventListener('click',()=>window.print());
+  window.addEventListener('resize',()=>{
+    if (overlay.classList.contains('active')) setupCanvas(large,true);
+    else setupCanvas(small,true);
+  });
+  setupCanvas(small,false);
+})();
+</script>
+</body>
+</html>
